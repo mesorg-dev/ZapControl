@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>zapret</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand">
+        <span id="status-dot" class="dot off"></span>
+        <span class="name">zapret</span>
+        <span id="status-text" class="muted">стоп</span>
+      </div>
+      <div class="header-right">
+        <span id="service-badge" class="badge hidden">служба</span>
+        <button id="btn-settings" class="ghost" title="Настройки">⚙</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel controls">
+        <div class="row">
+          <label for="strategy-select">Стратегия</label>
+          <select id="strategy-select"></select>
+        </div>
+
+        <div class="actions">
+          <button id="btn-toggle" class="primary">Запустить</button>
+          <button id="btn-auto" class="secondary">Автотест</button>
+          <button id="btn-cancel" class="ghost hidden">Отмена</button>
+        </div>
+
+        <div class="row toggles">
+          <label class="switch">
+            <input type="checkbox" id="sw-autostart" />
+            <span class="slider"></span>
+            <span class="switch-label">Автозапуск</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="sw-roblox" />
+            <span class="slider"></span>
+            <span class="switch-label">Roblox-фикс</span>
+          </label>
+        </div>
+
+        <div class="row service-row">
+          <button id="btn-service-install" class="ghost small">Установить службу</button>
+          <button id="btn-service-remove" class="ghost small">Удалить службу</button>
+        </div>
+
+        <div id="progress-wrap" class="hidden">
+          <div class="progress-meta">
+            <span id="progress-label">тест…</span>
+            <span id="progress-count"></span>
+          </div>
+          <div class="progress"><div id="progress-bar"></div></div>
+        </div>
+      </section>
+
+      <section class="panel results">
+        <div class="panel-head">
+          <h2>Результаты автотеста</h2>
+          <span id="best-label" class="best hidden"></span>
+        </div>
+        <div id="results-body" class="results-body">
+          <p class="muted empty">Запусти автотест, чтобы подобрать рабочую стратегию под твой провайдер.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="log-strip">
+      <button id="btn-log-toggle" class="ghost small">лог</button>
+      <pre id="log"></pre>
+    </footer>
+  </div>
+
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>Настройки</h2>
+        <button id="btn-settings-close" class="ghost">✕</button>
+      </div>
+      <label class="stack">
+        <span>URL JSON с IP для Roblox</span>
+        <input type="text" id="inp-roblox-url" spellcheck="false" />
+      </label>
+      <label class="stack">
+        <span>Режим автозапуска</span>
+        <select id="sel-autostart-mode">
+          <option value="none">выкл</option>
+          <option value="tray">трей (приложение)</option>
+          <option value="service">служба Windows</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button id="btn-roblox-update" class="secondary">Обновить Roblox-фикс</button>
+        <button id="btn-roblox-remove" class="ghost">Снять Roblox-фикс</button>
+      </div>
+      <p id="roblox-status-line" class="muted"></p>
+      <div class="modal-actions">
+        <button id="btn-settings-save" class="primary">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# targets.txt - endpoint list for auto-tests
+#
+# Format:
+#   KeyName = "https://host..."   -> HTTP/TLS checks + ping
+#   KeyName = "PING:1.2.3.4"       -> ping only
+
+### Discord
+DiscordMain           = "https://discord.com"
+DiscordGateway        = "https://gateway.discord.gg"
+DiscordCDN            = "https://cdn.discordapp.com"
+DiscordUpdates        = "https://updates.discord.com"
+
+### YouTube
+YouTubeWeb            = "https://www.youtube.com"
+YouTubeShort          = "https://youtu.be"
+YouTubeImage          = "https://i.ytimg.com"
+YouTubeVideoRedirect  = "https://redirector.googlevideo.com"
+
+### Google
+GoogleMain            = "https://www.google.com"
+
+### Cloudflare
+CloudflareWeb         = "https://www.cloudflare.com"
+
+### Public DNS (PING-only)
+CloudflareDNS1111     = "PING:1.1.1.1"
+GoogleDNS8888         = "PING:8.8.8.8"

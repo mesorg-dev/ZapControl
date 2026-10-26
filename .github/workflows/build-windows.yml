@@ -1,0 +1,115 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ZIP_URL: https://github.com/Flowseal/zapret-discord-youtube/releases/latest/download/zapret-discord-youtube.zip
+
+jobs:
+  build:
+    name: Build (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build Tauri (NSIS installer)
+        run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Fetch zapret binaries (bin/ from Flowseal release)
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $zip = Join-Path $env:RUNNER_TEMP 'flowseal.zip'
+          Invoke-WebRequest -Uri $env:ZIP_URL -OutFile $zip
+          $extract = Join-Path $env:RUNNER_TEMP 'flowseal'
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          # find bin dir (release layout may nest under a folder)
+          $bin = Get-ChildItem -Path $extract -Recurse -Directory -Filter 'bin' | Select-Object -First 1
+          if (-not $bin) { throw 'bin/ not found in Flowseal archive' }
+          New-Item -ItemType Directory -Force -Path dist-portable | Out-Null
+          Copy-Item -Recurse $bin.FullName dist-portable/bin
+          Write-Host "bin contents:"
+          Get-ChildItem dist-portable/bin | Select-Object -ExpandProperty Name
+
+      - name: Assemble portable package
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path src-tauri/target/release -Filter 'zapret-gui.exe' -Recurse | Select-Object -First 1
+          if (-not $exe) {
+            # tauri productName is "zapret"
+            $exe = Get-ChildItem -Path src-tauri/target/release -Filter 'zapret.exe' -Recurse | Select-Object -First 1
+          }
+          if (-not $exe) { throw 'built exe not found' }
+          Copy-Item $exe.FullName dist-portable/zapret.exe
+          Copy-Item -Recurse lists dist-portable/lists
+          Copy-Item -Recurse strategies dist-portable/strategies
+          New-Item -ItemType Directory -Force -Path dist-portable/utils | Out-Null
+          Copy-Item utils/targets.txt dist-portable/utils/targets.txt
+          # zip portable
+          Compress-Archive -Path dist-portable/* -DestinationPath zapret-gui-portable.zip -Force
+          Get-ChildItem zapret-gui-portable.zip | Select-Object Name, Length
+
+      - name: Collect installer
+        shell: pwsh
+        run: |
+          $nsis = Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Filter '*.exe' |
+            Where-Object { $_.Name -match 'setup|nsis|installer' } |
+            Select-Object -First 1
+          if ($nsis) {
+            Copy-Item $nsis.FullName "zapret-gui-setup-$($nsis.BaseName).exe" -ErrorAction SilentlyContinue
+            Copy-Item $nsis.FullName zapret-gui-setup.exe -Force
+            Write-Host "installer: $($nsis.FullName)"
+          } else {
+            Write-Host "no nsis exe found (check bundle output)"
+            Get-ChildItem src-tauri/target/release/bundle -Recurse | Select-Object FullName
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zapret-gui-windows
+          path: |
+            zapret-gui-portable.zip
+            zapret-gui-setup.exe
+          if-no-files-found: warn
+
+      - name: Create GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            zapret-gui-portable.zip
+            zapret-gui-setup.exe
+          generate_release_notes: true

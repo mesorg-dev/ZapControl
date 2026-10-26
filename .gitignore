@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+_ref/
+*.log
+.DS_Store
+# binaries you copy locally from Flowseal release (do not commit if you prefer)
+bin/

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "updated": "2026-10-27T00:00:00Z",
+  "description": "IP for Roblox CDN to fix thumbnail/image loading. Update this file in your repo; clients pull it automatically.",
+  "entries": [
+    {
+      "host": "tr.rbxcdn.com",
+      "ips": ["104.18.32.47", "104.18.33.47"]
+    },
+    {
+      "host": "cdn.rbxcdn.com",
+      "ips": ["151.101.1.194", "151.101.65.194"]
+    },
+    {
+      "host": "images.rbxcdn.com",
+      "ips": ["151.101.1.194"]
+    },
+    {
+      "host": "content.rbxcdn.com",
+      "ips": ["151.101.1.194"]
+    },
+    {
+      "host": "api.roblox.com",
+      "ips": ["128.116.47.12"]
+    },
+    {
+      "host": "assets.rbxcdn.com",
+      "ips": ["104.18.32.47"]
+    }
+  ]
+}
