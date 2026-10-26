@@ -11,9 +11,6 @@ on:
 permissions:
   contents: write
 
-env:
-  ZIP_URL: https://github.com/Flowseal/zapret-discord-youtube/releases/latest/download/zapret-discord-youtube.zip
-
 jobs:
   build:
     name: Build (windows-latest)
@@ -51,11 +48,15 @@ jobs:
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
+          $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/Flowseal/zapret-discord-youtube/releases/latest'
+          $asset = $rel.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
+          if (-not $asset) { throw 'zip asset not found in latest Flowseal release' }
+          Write-Host "downloading: $($asset.browser_download_url)"
           $zip = Join-Path $env:RUNNER_TEMP 'flowseal.zip'
-          Invoke-WebRequest -Uri $env:ZIP_URL -OutFile $zip
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
           $extract = Join-Path $env:RUNNER_TEMP 'flowseal'
           Expand-Archive -Path $zip -DestinationPath $extract -Force
-          # find bin dir (release layout may nest under a folder)
+          # release layout nests under a version folder
           $bin = Get-ChildItem -Path $extract -Recurse -Directory -Filter 'bin' | Select-Object -First 1
           if (-not $bin) { throw 'bin/ not found in Flowseal archive' }
           New-Item -ItemType Directory -Force -Path dist-portable | Out-Null
