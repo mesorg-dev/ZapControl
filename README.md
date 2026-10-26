@@ -1,4 +1,4 @@
-# zapret-gui
+# ZapControl (zapret-gui)
 
 Минималистичный чёрный GUI поверх `winws` (zapret) — форк идей [Flowseal/zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) с удобным окном вместо консольных `.bat`.
 
