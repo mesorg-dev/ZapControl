@@ -7,6 +7,24 @@ use zapret_core::strategy;
 use zapret_core::targets;
 use zapret_core::tester;
 
+/// Flat error: single exception class in Kotlin, message = Display.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum FfiError {
+    #[error("{0}")]
+    Message(String),
+}
+
+impl From<String> for FfiError {
+    fn from(s: String) -> Self {
+        FfiError::Message(s)
+    }
+}
+
+fn err(s: impl std::fmt::Display) -> FfiError {
+    FfiError::Message(s.to_string())
+}
+
 /// Load all strategy templates from a directory. Returns JSON array.
 #[uniffi::export]
 pub fn load_strategies_json(dir: String) -> String {
@@ -24,15 +42,15 @@ pub fn load_targets_json(path: String) -> String {
 
 /// Fetch roblox-ips.json from URL. Returns RobloxFile JSON.
 #[uniffi::export]
-pub async fn fetch_roblox_json(url: String) -> Result<String, String> {
-    let file = roblox::fetch(&url).await?;
-    serde_json::to_string(&file).map_err(|e| e.to_string())
+pub async fn fetch_roblox_json(url: String) -> Result<String, FfiError> {
+    let file = roblox::fetch(&url).await.map_err(err)?;
+    serde_json::to_string(&file).map_err(err)
 }
 
 /// Build DNS/hosts body from RobloxFile JSON.
 #[uniffi::export]
-pub fn build_roblox_hosts(file_json: String) -> Result<String, String> {
-    let file = roblox::parse_file(&file_json)?;
+pub fn build_roblox_hosts(file_json: String) -> Result<String, FfiError> {
+    let file = roblox::parse_file(&file_json).map_err(err)?;
     Ok(roblox::build_hosts_block(&file))
 }
 
@@ -54,15 +72,15 @@ pub fn load_settings_json(path: String) -> String {
     serde_json::to_string(&s).unwrap_or_default()
 }
 
-/// Save settings JSON to a path; returns "ok" or error string.
+/// Save settings JSON to a path; returns Ok or FfiError.
 #[uniffi::export]
-pub fn save_settings_json(path: String, json: String) -> Result<(), String> {
-    let s: Settings = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+pub fn save_settings_json(path: String, json: String) -> Result<(), FfiError> {
+    let s: Settings = serde_json::from_str(&json).map_err(err)?;
     let p = std::path::Path::new(&path);
     if path.is_empty() {
-        settings::save(&s).map_err(|e| e.to_string())
+        settings::save(&s).map_err(|e| err(e.to_string()))
     } else {
-        settings::save_to(p, &s).map_err(|e| e.to_string())
+        settings::save_to(p, &s).map_err(|e| err(e.to_string()))
     }
 }
 

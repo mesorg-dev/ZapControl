@@ -5,8 +5,8 @@ src-tauri/gen/
 _ref/
 *.log
 .DS_Store
-# binaries you copy locally from Flowseal release (do not commit if you prefer)
-bin/
+# binaries you copy locally from Flowseal release (root only — don't match Rust src/bin/)
+/bin/
 
 # Rust workspace artifacts
 crates/*/target/

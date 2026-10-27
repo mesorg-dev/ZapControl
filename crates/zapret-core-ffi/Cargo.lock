@@ -1826,6 +1826,7 @@ name = "zapret-core-ffi"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "thiserror 1.0.69",
  "tokio",
  "uniffi",
  "zapret-core",
