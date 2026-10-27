@@ -15,6 +15,9 @@ jobs:
   build:
     name: Build APK (ubuntu)
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,11 +41,26 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Android commandline-tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME"
+          curl -fsSL -o cmdline.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          unzip -q cmdline.zip
+          mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+          rm cmdline.zip
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.2.12479018"
 
       - name: Build FFI cdylib for arm64-v8a
-        run: cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release
 
       - name: Build APK
         run: ./gradlew assembleDebug
