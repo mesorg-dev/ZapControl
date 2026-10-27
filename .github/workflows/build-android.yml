@@ -69,7 +69,20 @@ jobs:
         run: |
           set -euo pipefail
           export ANDROID_NDK_HOME="${{ steps.ndk.outputs.ndk_dir }}"
-          cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          set +e
+          cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release 2>&1 | tee /tmp/cargo-ndk.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            echo "## cargo-ndk failed (exit $RC)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 60 /tmp/cargo-ndk.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::cargo-ndk exit $RC — see step summary"
+            tail -n 20 /tmp/cargo-ndk.log
+            exit "$RC"
+          fi
           echo "Built libs:"
           find android/app/src/main/jniLibs -type f -name "*.so" -exec ls -la {} \;
 
