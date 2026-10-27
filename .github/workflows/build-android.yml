@@ -31,7 +31,7 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
         working-directory: android
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
