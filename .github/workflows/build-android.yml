@@ -30,60 +30,8 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Setup Rust (Android NDK target)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-
-      - name: Accept Android licenses
-        run: |
-          set -euo pipefail
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          mkdir -p "$ANDROID_HOME/licenses"
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          # list what's already there
-          ls -la "$ANDROID_HOME" || true
-          ls -la "$ANDROID_HOME/ndk" 2>/dev/null || echo "no ndk dir yet"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed 2>/dev/null | grep -i ndk || true
-          # install ndk if missing
-          if [ ! -d "$ANDROID_HOME/ndk" ] || [ -z "$(ls -A "$ANDROID_HOME/ndk" 2>/dev/null)" ]; then
-            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.2.12479018"
-          fi
-          ls -la "$ANDROID_HOME/ndk" || true
-
-      - name: Build FFI cdylib for arm64-v8a
-        run: |
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          NDK_DIR=$(ls -d "$ANDROID_HOME/ndk"/* 2>/dev/null | head -1)
-          echo "NDK_DIR=$NDK_DIR"
-          if [ -z "$NDK_DIR" ]; then
-            echo "::error::NDK not found under $ANDROID_HOME/ndk"
-            ls -la "$ANDROID_HOME" || true
-            exit 1
-          fi
-          export ANDROID_NDK_HOME="$NDK_DIR"
-          set +e
-          cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release 2>&1 | tee /tmp/cargo-ndk.log
-          RC=${PIPESTATUS[0]}
-          set -e
-          echo "cargo-ndk exit code: $RC"
-          echo '## cargo-ndk output' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          tail -n 80 /tmp/cargo-ndk.log >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          if [ "$RC" -ne 0 ]; then
-            echo "::error::cargo-ndk failed with exit code $RC"
-            exit "$RC"
-          fi
-
       - name: Build APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --stacktrace
         working-directory: android
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
