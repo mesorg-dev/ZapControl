@@ -14,14 +14,18 @@
 
 ```
 zapret-gui/
-├── src/                  # фронтенд (vanilla HTML/CSS/JS, без сборщика)
-├── src-tauri/            # Rust-бэкенд (Tauri 2)
+├── src/                  # фронтенд Windows (vanilla HTML/CSS/JS, без сборщика)
+├── src-tauri/            # Windows-бэкенд (Tauri 2)
 │   └── src/
 │       ├── engine.rs     # запуск winws, служба
 │       ├── tester.rs     # автотест стратегий
 │       ├── roblox.rs     # hosts-фикс из JSON
 │       ├── autostart.rs  # Run-ключ реестра
 │       └── ...
+├── crates/
+│   ├── zapret-core/      # портируемая логика (settings, strategy, targets, scoring, roblox)
+│   └── zapret-core-ffi/  # UniFFI-мост для Android/Kotlin
+├── android/              # Android-приложение (VpnService, Compose)
 ├── strategies/           # аргументы winws (шаблоны, конвертированы из .bat)
 ├── lists/                # hostlists (list-general, list-google, …)
 ├── utils/targets.txt     # домены для автотеста
@@ -106,13 +110,28 @@ git add roblox-ips.json && git commit -m "update roblox ips" && git push
 
 Важно: **полноценный nfqws без root на Android невозможен** — TUN не даёт десинхронизацию TCP payload как WinDivert/NFQUEUE. Реалистичный план:
 
-1. Kotlin + Jetpack Compose, чёрная тема (как здесь)
-2. `VpnService` — маршрутизация трафика приложения
-3. Обход — урезанный (DNS-level + частичный userspace-TCP), либо root-режим (nfqws + iptables)
-4. Roblox-фикс — тот же JSON, но ответы DNS отдаёт само приложение (виртуальный DNS в VPN), hosts не нужен
-5. Автотест — те же URL, проверкаconnectivity через curl-эквивалент
+1. **M1 (готово)**: `crates/zapret-core` — общая логика; `crates/zapret-core-ffi` — UniFFI-мост; `android/` — скелет (Gradle + Compose, чёрная тема, заглушка `VpnService`)
+2. **M2**: подключить JNI/UniFFI → Kotlin, читать TUN, эмулировать frag-режим через userspace TCP-сплайс
+3. **M3**: свой DNS-сервер в VPN → Roblox-фикс через тот же JSON (hosts не нужен)
+4. **M4**: автотест стратегий на Android (те же URL из `utils/targets.txt`)
 
-Логика тестов и формат JSON уже вынесены так, чтобы переиспользовать targets/strategies-файлы.
+Сборка Android (открыть в Android Studio или через CLI):
+
+```bash
+cd android
+./gradlew assembleDebug   # или Android Studio → Run
+```
+
+FFI-биндинги генерируются так (после установки NDK + cargo-ndk):
+
+```bash
+cargo install cargo-ndk
+rustup target add aarch64-linux-android
+cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release
+cargo run -p zapret-core-ffi --bin uniffi-bindgen \
+  generate --language kotlin --out-dir android/app/src/main/java \
+  --source crates/zapret-core-ffi/src/lib.rs
+```
 
 ## Стратегии
 

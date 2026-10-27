@@ -33,7 +33,14 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            crates/zapret-core
+            crates/zapret-core-ffi
+
+      - name: Test zapret-core
+        run: cargo test
+        working-directory: crates/zapret-core
 
       - name: Install frontend deps
         run: npm ci

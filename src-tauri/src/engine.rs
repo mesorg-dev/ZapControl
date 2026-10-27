@@ -1,6 +1,7 @@
 use crate::elev::{self, ElevatedResult};
 use crate::paths;
-use crate::strategy::{render_args, RenderCtx};
+use crate::strategy::from_env;
+use zapret_core::strategy::render_args;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 
@@ -38,7 +39,7 @@ impl Engine {
             ));
         }
 
-        let ctx = RenderCtx::from_env();
+        let ctx = from_env();
         let args = render_args(template, &ctx);
 
         let bin = paths::bin_dir();
@@ -105,7 +106,7 @@ impl Engine {
     }
 
     pub async fn install_service(&self, _strategy_id: &str, template: &str) -> ElevatedResult {
-        let ctx = RenderCtx::from_env();
+        let ctx = from_env();
         let args = render_args(template, &ctx);
         let winws = paths::winws_exe();
         let winws_s = winws.to_string_lossy().replace('\'', "''");

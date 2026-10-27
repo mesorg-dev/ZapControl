@@ -7,3 +7,14 @@ _ref/
 .DS_Store
 # binaries you copy locally from Flowseal release (do not commit if you prefer)
 bin/
+
+# Rust workspace artifacts
+crates/*/target/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml

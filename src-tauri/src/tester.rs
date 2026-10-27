@@ -1,127 +1,27 @@
+//! Windows tester: winws spawn + curl probes, scoring from zapret-core.
 use crate::paths;
-use crate::strategy::{render_args, RenderCtx, Strategy};
-use serde::Serialize;
+use crate::strategy::{self, from_env};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use zapret_core::targets::{self, TestTarget};
+use zapret_core::tester::{StrategyReport, TargetCheck, TargetResult};
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestTarget {
-    pub name: String,
-    pub url: Option<String>,
-    pub ping: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TargetCheck {
-    pub label: String, // HTTP | TLS1.2 | TLS1.3
-    pub status: String, // OK | ERR | UNSUP | SSL
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TargetResult {
-    pub target: String,
-    pub checks: Vec<TargetCheck>,
-    pub ping: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StrategyReport {
-    pub strategy_id: String,
-    pub strategy_name: String,
-    pub ok_count: i32,
-    pub err_count: i32,
-    pub results: Vec<TargetResult>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestSummary {
-    pub best_strategy: Option<String>,
-    pub reports: Vec<StrategyReport>,
-}
-
-pub fn default_targets() -> Vec<TestTarget> {
-    vec![
-        t("Discord", "https://discord.com"),
-        t("Discord Gateway", "https://gateway.discord.gg"),
-        t("Discord CDN", "https://cdn.discordapp.com"),
-        t("Discord Updates", "https://updates.discord.com"),
-        t("YouTube", "https://www.youtube.com"),
-        t("YouTube Short", "https://youtu.be"),
-        t("YouTube Image", "https://i.ytimg.com"),
-        t("YouTube Redirect", "https://redirector.googlevideo.com"),
-        t("Google", "https://www.google.com"),
-        t("Cloudflare", "https://www.cloudflare.com"),
-        ping_t("DNS 1.1.1.1", "1.1.1.1"),
-        ping_t("DNS 8.8.8.8", "8.8.8.8"),
-    ]
-}
-
-fn t(name: &str, url: &str) -> TestTarget {
-    TestTarget {
-        name: name.into(),
-        url: Some(url.into()),
-        ping: Some(host_of(url).into()),
-    }
-}
-
-fn ping_t(name: &str, ip: &str) -> TestTarget {
-    TestTarget {
-        name: name.into(),
-        url: None,
-        ping: Some(ip.into()),
-    }
-}
-
-fn host_of(url: &str) -> String {
-    url.trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .split('/')
-        .next()
-        .unwrap_or("")
-        .to_string()
-}
+pub use zapret_core::tester::TestSummary;
 
 fn load_targets() -> Vec<TestTarget> {
     let p = paths::install_root().join("utils").join("targets.txt");
-    if let Ok(txt) = std::fs::read_to_string(&p) {
-        let mut out = Vec::new();
-        for line in txt.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((name, val)) = line.split_once('=') {
-                let name = name.trim().to_string();
-                let val = val.trim().trim_matches('"').to_string();
-                if let Some(ip) = val.strip_prefix("PING:") {
-                    out.push(ping_t(&name, ip.trim()));
-                } else if val.starts_with("http") {
-                    out.push(t(&name, &val));
-                }
-            }
-        }
-        if !out.is_empty() {
-            return out;
-        }
-    }
-    default_targets()
+    targets::load_targets(&p)
 }
 
 pub async fn run(
     app: AppHandle,
-    strategies: Vec<Strategy>,
+    strategies: Vec<strategy::Strategy>,
     cancel: Arc<AtomicBool>,
 ) -> TestSummary {
     let targets = load_targets();
     let mut reports = Vec::new();
-    let mut best: Option<(String, i32)> = None;
 
     let total = strategies.len();
     for (idx, strat) in strategies.iter().enumerate() {
@@ -144,8 +44,8 @@ pub async fn run(
         let _ = crate::elev::run_hidden("taskkill", &["/IM", "winws.exe", "/F"]).await;
         tokio::time::sleep(Duration::from_millis(250)).await;
 
-        let ctx = RenderCtx::from_env();
-        let args = render_args(&strat.args_template, &ctx);
+        let ctx = from_env();
+        let args = zapret_core::strategy::render_args(&strat.args_template, &ctx);
 
         match spawn_winws(&args).await {
             Ok(()) => {}
@@ -179,38 +79,19 @@ pub async fn run(
         tokio::time::sleep(Duration::from_millis(400)).await;
 
         let results = test_all_targets(&app, &targets, &cancel).await;
-        let ok_count = results
-            .iter()
-            .filter(|r| r.checks.iter().any(|c| c.status == "OK"))
-            .count() as i32;
-        let err_count = results
-            .iter()
-            .flat_map(|r| r.checks.iter())
-            .filter(|c| c.status == "ERR" || c.status == "SSL")
-            .count() as i32;
+        let report = StrategyReport::from_results(&strat.id, &strat.name, results);
 
         let _ = app.emit(
             "test-strategy-done",
             serde_json::json!({
-                "strategyId": strat.id,
-                "strategyName": strat.name,
-                "okCount": ok_count,
-                "errCount": err_count,
+                "strategyId": report.strategy_id,
+                "strategyName": report.strategy_name,
+                "okCount": report.ok_count,
+                "errCount": report.err_count,
             }),
         );
 
-        match &best {
-            Some((_, bk)) if ok_count <= *bk => {}
-            _ => best = Some((strat.id.clone(), ok_count)),
-        }
-
-        reports.push(StrategyReport {
-            strategy_id: strat.id.clone(),
-            strategy_name: strat.name.clone(),
-            ok_count,
-            err_count,
-            results,
-        });
+        reports.push(report);
 
         let _ = crate::elev::run_hidden("taskkill", &["/IM", "winws.exe", "/F"]).await;
         tokio::time::sleep(Duration::from_millis(250)).await;
@@ -218,10 +99,7 @@ pub async fn run(
 
     let _ = crate::elev::run_hidden("taskkill", &["/IM", "winws.exe", "/F"]).await;
 
-    TestSummary {
-        best_strategy: best.map(|(id, _)| id),
-        reports,
-    }
+    zapret_core::tester::summarize(reports)
 }
 
 async fn spawn_winws(args: &str) -> Result<(), String> {
@@ -258,11 +136,11 @@ async fn spawn_winws(args: &str) -> Result<(), String> {
 
 async fn test_all_targets(
     app: &AppHandle,
-    targets: &[TestTarget],
+    targets_list: &[TestTarget],
     cancel: &Arc<AtomicBool>,
 ) -> Vec<TargetResult> {
     let mut out = Vec::new();
-    for target in targets {
+    for target in targets_list {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
@@ -354,7 +232,6 @@ async fn curl_head(url: &str, extra: &[&str]) -> String {
             } else if code == "000" || code.is_empty() {
                 "ERR".into()
             } else {
-                // got an HTTP code => TLS handshake worked, count as OK-ish
                 "OK".into()
             }
         }
@@ -368,12 +245,14 @@ async fn ping_ms(host: &str) -> String {
             for line in out.lines() {
                 let l = line.to_lowercase();
                 if l.contains("time=") || l.contains("время=") {
-                    // extract ms
                     if let Some(pos) = l.find("ms") {
                         let before = &l[..pos];
                         if let Some(start) = before.rfind(|c: char| c.is_ascii_digit() || c == '.') {
                             let mut s = start;
-                            while s > 0 && (before.as_bytes()[s - 1].is_ascii_digit() || before.as_bytes()[s - 1] == b'.') {
+                            while s > 0
+                                && (before.as_bytes()[s - 1].is_ascii_digit()
+                                    || before.as_bytes()[s - 1] == b'.')
+                            {
                                 s -= 1;
                             }
                             return format!("{} ms", &before[s..pos].trim_end_matches('='));

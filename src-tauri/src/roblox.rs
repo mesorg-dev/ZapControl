@@ -1,24 +1,9 @@
+//! Roblox fix: JSON fetch + hosts block from core; elevated apply on Windows.
 use crate::elev;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-pub const HOSTS_BEGIN: &str = "# ZAPRET-GUI ROBLOX BEGIN";
-pub const HOSTS_END: &str = "# ZAPRET-GUI ROBLOX END";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RobloxFile {
-    pub version: Option<i32>,
-    pub updated: Option<String>,
-    pub description: Option<String>,
-    pub entries: Vec<RobloxEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RobloxEntry {
-    pub host: String,
-    pub ips: Vec<String>,
-}
+pub use zapret_core::roblox::{build_hosts_block, fetch, RobloxFile};
+use zapret_core::roblox::{HOSTS_BEGIN, HOSTS_END};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,57 +11,6 @@ pub struct RobloxStatus {
     pub applied: bool,
     pub entry_count: usize,
     pub updated: Option<String>,
-}
-
-pub async fn fetch(url: &str) -> Result<RobloxFile, String> {
-    // cache-bust
-    let bust = uuid::Uuid::new_v4();
-    let full = if url.contains('?') {
-        format!("{url}&t={bust}")
-    } else {
-        format!("{url}?t={bust}")
-    };
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client
-        .get(&full)
-        .header("Cache-Control", "no-cache")
-        .send()
-        .await
-        .map_err(|e| format!("запрос не удался: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-
-    resp.json::<RobloxFile>()
-        .await
-        .map_err(|e| format!("не удалось разобрать JSON: {e}"))
-}
-
-pub fn build_hosts_block(file: &RobloxFile) -> String {
-    let mut lines = vec![
-        HOSTS_BEGIN.to_string(),
-        format!(
-            "# updated: {}",
-            file.updated.as_deref().unwrap_or("unknown")
-        ),
-    ];
-    for e in &file.entries {
-        for ip in &e.ips {
-            let ip = ip.trim();
-            if ip.is_empty() {
-                continue;
-            }
-            lines.push(format!("{ip} {}", e.host.trim()));
-        }
-    }
-    lines.push(HOSTS_END.to_string());
-    lines.join("\n")
 }
 
 pub async fn apply(file: &RobloxFile) -> elev::ElevatedResult {
@@ -146,7 +80,13 @@ if ($si -ge 0 -and $ei -gt $si) {{
 pub async fn status() -> RobloxStatus {
     let hosts = std::path::Path::new(r"C:\Windows\System32\drivers\etc\hosts");
     let alt = std::env::var("SystemRoot")
-        .map(|r| std::path::PathBuf::from(r).join("System32").join("drivers").join("etc").join("hosts"))
+        .map(|r| {
+            std::path::PathBuf::from(r)
+                .join("System32")
+                .join("drivers")
+                .join("etc")
+                .join("hosts")
+        })
         .ok();
     let path = if hosts.exists() {
         Some(hosts.to_path_buf())
