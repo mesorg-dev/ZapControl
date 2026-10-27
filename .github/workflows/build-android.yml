@@ -92,10 +92,24 @@ jobs:
           set -euo pipefail
           SO=$(find android/app/src/main/jniLibs -name "libzapret_core_ffi.so" | head -1)
           echo "Using .so: $SO"
+          if [ -z "$SO" ]; then
+            echo "::error::libzapret_core_ffi.so not found in jniLibs"
+            find android/app/src/main/jniLibs -type f || true
+            exit 1
+          fi
+          set +e
           cargo run --manifest-path crates/zapret-core-ffi/Cargo.toml --bin uniffi-bindgen -- \
             generate --language kotlin \
             --out-dir android/app/src/main/java \
-            --library "$SO" --crate zapret_core_ffi
+            --library "$SO" --crate zapret_core_ffi 2>&1 | tee /tmp/bindgen.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            LOG_TAIL=$(tail -n 15 /tmp/bindgen.log | tr '\n' ' | ')
+            echo "::error::bindgen exit $RC :: $LOG_TAIL"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 40 /tmp/bindgen.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit "$RC"
+          fi
           echo "Generated:"
           find android/app/src/main/java/uniffi -type f
 
