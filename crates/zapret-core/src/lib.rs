@@ -1,3 +1,4 @@
+pub mod dns;
 pub mod roblox;
 pub mod settings;
 pub mod strategy;

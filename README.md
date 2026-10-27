@@ -108,12 +108,13 @@ git add roblox-ips.json && git commit -m "update roblox ips" && git push
 
 ## Фаза 2: Android (через VpnService)
 
-Важно: **полноценный nfqws без root на Android невозможен** — TUN не даёт десинхронизацию TCP payload как WinDivert/NFQUEUE. Реалистичный план:
+Важно: **полноценный nfqws без root на Android невозможен** — TUN не даёт десинхронизацию TCP payload как WinDivert/NFQUEUE. Текущий статус:
 
-1. **M1 (готово)**: `crates/zapret-core` — общая логика; `crates/zapret-core-ffi` — UniFFI-мост; `android/` — скелет (Gradle + Compose, чёрная тема, заглушка `VpnService`)
-2. **M2**: подключить JNI/UniFFI → Kotlin, читать TUN, эмулировать frag-режим через userspace TCP-сплайс
-3. **M3**: свой DNS-сервер в VPN → Roblox-фикс через тот же JSON (hosts не нужен)
-4. **M4**: автотест стратегий на Android (те же URL из `utils/targets.txt`)
+1. **M1 (готово)**: `crates/zapret-core` — общая логика; `crates/zapret-core-ffi` — UniFFI-мост; `android/` — скелет (Gradle + Compose, чёрная тема)
+2. **M2 (готово)**: UniFFI → Kotlin (`CoreBridge`), assets (22 стратегии + `targets.txt`), CI собирает APK
+3. **M3 (готово)**: DNS-only `VpnService`: TUN-читалка, свой DNS `10.0.0.3/32`, локальные ответы из Rust (`dns.rs`), Roblox-фикс через подмену A-ответов по JSON, остальное — форвард в upstream через защищённый сокет; FGS-уведомление
+4. **M2-TCP (TODO)**: эмуляция frag-режима через userspace TCP-сплайс (smoltcp в Rust) — обход DPI для TCP без root; это самая сложная часть, пока не реализована
+5. **M4 (TODO)**: автотест стратегий на Android (те же URL из `utils/targets.txt`)
 
 Сборка Android (открыть в Android Studio или через CLI):
 
@@ -122,16 +123,20 @@ cd android
 ./gradlew assembleDebug   # или Android Studio → Run
 ```
 
-FFI-биндинги генерируются так (после установки NDK + cargo-ndk):
+FFI-биндинги генерируются так (после установки NDK + cargo-ndk; команды запускать из каталога крейта — root `Cargo.toml` удалён намеренно):
 
 ```bash
 cargo install cargo-ndk
 rustup target add aarch64-linux-android
-cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release
-cargo run -p zapret-core-ffi --bin uniffi-bindgen \
-  generate --language kotlin --out-dir android/app/src/main/java \
-  --source crates/zapret-core-ffi/src/lib.rs
+cd crates/zapret-core-ffi
+cargo ndk -t arm64-v8a -o ../../android/app/src/main/jniLibs build --release
+cargo run --bin uniffi-bindgen -- generate --language kotlin \
+  --out-dir ../../android/app/src/main/java \
+  --library ../../android/app/src/main/jniLibs/arm64-v8a/libzapret_core_ffi.so \
+  --crate zapret_core_ffi
 ```
+
+CI делает то же самое автоматически перед `gradle assembleDebug`.
 
 ## Стратегии
 

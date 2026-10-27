@@ -38,7 +38,7 @@ object CoreBridge {
     }
 
     /** Fetch roblox-ips.json, return body of DNS/hosts entries or throw FfiException. */
-    suspend fun fetchRobloxHosts(url: String): String {
+    fun fetchRobloxHosts(url: String): String {
         val fileJson = fetchRobloxJson(url)
         return buildRobloxHosts(fileJson)
     }
@@ -49,6 +49,13 @@ object CoreBridge {
     fun loadSettings(path: String): String = loadSettingsJson(path)
 
     fun saveSettings(path: String, json: String) = saveSettingsJson(path, json)
+
+    /** robloxJsonUrl from saved settings (or core default placeholder). */
+    fun robloxJsonUrl(): String {
+        val json = loadSettings("")
+        return extractString(json, "robloxJsonUrl")
+            ?: "https://raw.githubusercontent.com/CHANGE_ME/zapret-data/main/roblox-ips.json"
+    }
 
     /** Exposed so UI can catch UnsatisfiedLinkError early if .so is missing. */
     fun isNativeAvailable(): Boolean = try {

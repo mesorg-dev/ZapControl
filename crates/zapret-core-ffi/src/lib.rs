@@ -1,6 +1,7 @@
 //! UniFFI surface for zapret-core.
 //! JSON-in/JSON-out keeps the Kotlin side simple; typed structs can come later.
 
+use zapret_core::dns;
 use zapret_core::roblox;
 use zapret_core::settings::{self, Settings};
 use zapret_core::strategy;
@@ -40,10 +41,15 @@ pub fn load_targets_json(path: String) -> String {
     serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())
 }
 
-/// Fetch roblox-ips.json from URL. Returns RobloxFile JSON.
+/// Fetch roblox-ips.json from URL (blocking; avoids uniffi async-runtime edge cases).
+/// Returns RobloxFile JSON.
 #[uniffi::export]
-pub async fn fetch_roblox_json(url: String) -> Result<String, FfiError> {
-    let file = roblox::fetch(&url).await.map_err(err)?;
+pub fn fetch_roblox_json(url: String) -> Result<String, FfiError> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(err)?;
+    let file = rt.block_on(roblox::fetch(&url)).map_err(err)?;
     serde_json::to_string(&file).map_err(err)
 }
 
@@ -82,6 +88,19 @@ pub fn save_settings_json(path: String, json: String) -> Result<(), FfiError> {
     } else {
         settings::save_to(p, &s).map_err(|e| err(e.to_string()))
     }
+}
+
+/// Convert hosts block text (`ip host` lines) to `{"host":["ip"]}` JSON.
+#[uniffi::export]
+pub fn hosts_block_to_json(block: String) -> String {
+    dns::hosts_block_to_json(&block)
+}
+
+/// DNS override: build a response for `query` if qname is in `hosts_json`,
+/// else None (caller forwards upstream). Returns raw DNS message bytes.
+#[uniffi::export]
+pub fn dns_respond(query: Vec<u8>, hosts_json: String) -> Option<Vec<u8>> {
+    dns::dns_respond(&query, &hosts_json)
 }
 
 uniffi::setup_scaffolding!();

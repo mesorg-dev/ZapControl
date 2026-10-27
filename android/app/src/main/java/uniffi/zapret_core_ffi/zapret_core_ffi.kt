@@ -30,13 +30,6 @@ import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.resume
-import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
 // A rust-owned buffer is represented by its capacity, its current length, and a
@@ -732,6 +725,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -749,7 +746,11 @@ internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_zapret_core_ffi_checksum_func_build_roblox_hosts(
 ): Short
+fun uniffi_zapret_core_ffi_checksum_func_dns_respond(
+): Short
 fun uniffi_zapret_core_ffi_checksum_func_fetch_roblox_json(
+): Short
+fun uniffi_zapret_core_ffi_checksum_func_hosts_block_to_json(
 ): Short
 fun uniffi_zapret_core_ffi_checksum_func_load_settings_json(
 ): Short
@@ -808,8 +809,12 @@ internal interface UniffiLib : Library {
     // FFI functions
     fun uniffi_zapret_core_ffi_fn_func_build_roblox_hosts(`fileJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_zapret_core_ffi_fn_func_fetch_roblox_json(`url`: RustBuffer.ByValue,
-): Long
+fun uniffi_zapret_core_ffi_fn_func_dns_respond(`query`: RustBuffer.ByValue,`hostsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zapret_core_ffi_fn_func_fetch_roblox_json(`url`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_zapret_core_ffi_fn_func_hosts_block_to_json(`block`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_zapret_core_ffi_fn_func_load_settings_json(`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zapret_core_ffi_fn_func_load_strategies_json(`dir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -949,7 +954,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zapret_core_ffi_checksum_func_build_roblox_hosts() != 25335.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zapret_core_ffi_checksum_func_fetch_roblox_json() != 41726.toShort()) {
+    if (lib.uniffi_zapret_core_ffi_checksum_func_dns_respond() != 478.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zapret_core_ffi_checksum_func_fetch_roblox_json() != 15890.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zapret_core_ffi_checksum_func_hosts_block_to_json() != 10802.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zapret_core_ffi_checksum_func_load_settings_json() != 47643.toShort()) {
@@ -977,46 +988,6 @@ public fun uniffiEnsureInitialized() {
 }
 
 // Async support
-// Async return type handlers
-
-internal const val UNIFFI_RUST_FUTURE_POLL_READY = 0.toByte()
-internal const val UNIFFI_RUST_FUTURE_POLL_MAYBE_READY = 1.toByte()
-
-internal val uniffiContinuationHandleMap = UniffiHandleMap<CancellableContinuation<Byte>>()
-
-// FFI type for Rust future continuations
-internal object uniffiRustFutureContinuationCallbackImpl: UniffiRustFutureContinuationCallback {
-    override fun callback(data: Long, pollResult: Byte) {
-        uniffiContinuationHandleMap.remove(data).resume(pollResult)
-    }
-}
-
-internal suspend fun<T, F, E: kotlin.Exception> uniffiRustCallAsync(
-    rustFuture: Long,
-    pollFunc: (Long, UniffiRustFutureContinuationCallback, Long) -> Unit,
-    completeFunc: (Long, UniffiRustCallStatus) -> F,
-    freeFunc: (Long) -> Unit,
-    liftFunc: (F) -> T,
-    errorHandler: UniffiRustCallStatusErrorHandler<E>
-): T {
-    try {
-        do {
-            val pollResult = suspendCancellableCoroutine<Byte> { continuation ->
-                pollFunc(
-                    rustFuture,
-                    uniffiRustFutureContinuationCallbackImpl,
-                    uniffiContinuationHandleMap.insert(continuation)
-                )
-            }
-        } while (pollResult != UNIFFI_RUST_FUTURE_POLL_READY);
-
-        return liftFunc(
-            uniffiRustCallWithError(errorHandler, { status -> completeFunc(rustFuture, status) })
-        )
-    } finally {
-        freeFunc(rustFuture)
-    }
-}
 
 // Public interface members begin here.
 
@@ -1143,6 +1114,25 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
+/**
+ * @suppress
+ */
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+    override fun read(buf: ByteBuffer): ByteArray {
+        val len = buf.getInt()
+        val byteArr = ByteArray(len)
+        buf.get(byteArr)
+        return byteArr
+    }
+    override fun allocationSize(value: ByteArray): ULong {
+        return 4UL + value.size.toULong()
+    }
+    override fun write(value: ByteArray, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        buf.put(value)
+    }
+}
+
 
 
 
@@ -1223,10 +1213,34 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 
 
 
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteArray?> {
+    override fun read(buf: ByteBuffer): kotlin.ByteArray? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterByteArray.read(buf)
+    }
 
+    override fun allocationSize(value: kotlin.ByteArray?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterByteArray.allocationSize(value)
+        }
+    }
 
-
-
+    override fun write(value: kotlin.ByteArray?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterByteArray.write(value, buf)
+        }
+    }
+}
         /**
          * Build DNS/hosts body from RobloxFile JSON.
          */
@@ -1241,22 +1255,43 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
     
 
         /**
-         * Fetch roblox-ips.json from URL. Returns RobloxFile JSON.
-         */
-    @Throws(FfiException::class)
-    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-     suspend fun `fetchRobloxJson`(`url`: kotlin.String) : kotlin.String {
-        return uniffiRustCallAsync(
-        UniffiLib.INSTANCE.uniffi_zapret_core_ffi_fn_func_fetch_roblox_json(FfiConverterString.lower(`url`),),
-        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zapret_core_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
-        { future, continuation -> UniffiLib.INSTANCE.ffi_zapret_core_ffi_rust_future_complete_rust_buffer(future, continuation) },
-        { future -> UniffiLib.INSTANCE.ffi_zapret_core_ffi_rust_future_free_rust_buffer(future) },
-        // lift function
-        { FfiConverterString.lift(it) },
-        // Error FFI converter
-        FfiException.ErrorHandler,
+         * DNS override: build a response for `query` if qname is in `hosts_json`,
+         * else None (caller forwards upstream). Returns raw DNS message bytes.
+         */ fun `dnsRespond`(`query`: kotlin.ByteArray, `hostsJson`: kotlin.String): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_zapret_core_ffi_fn_func_dns_respond(
+        FfiConverterByteArray.lower(`query`),FfiConverterString.lower(`hostsJson`),_status)
+}
     )
     }
+    
+
+        /**
+         * Fetch roblox-ips.json from URL (blocking; avoids uniffi async-runtime edge cases).
+         * Returns RobloxFile JSON.
+         */
+    @Throws(FfiException::class) fun `fetchRobloxJson`(`url`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zapret_core_ffi_fn_func_fetch_roblox_json(
+        FfiConverterString.lower(`url`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Convert hosts block text (`ip host` lines) to `{"host":["ip"]}` JSON.
+         */ fun `hostsBlockToJson`(`block`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_zapret_core_ffi_fn_func_hosts_block_to_json(
+        FfiConverterString.lower(`block`),_status)
+}
+    )
+    }
+    
 
         /**
          * Load settings JSON from a path (Android DataStore path or Windows default).

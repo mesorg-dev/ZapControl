@@ -1,6 +1,6 @@
 package com.mesorg.zapret.ui
 
-import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,36 +37,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mesorg.zapret.core.AssetBootstrap
 import com.mesorg.zapret.core.CoreBridge
+import com.mesorg.zapret.vpn.VpnState
+import com.mesorg.zapret.vpn.ZapretVpnService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
-fun App() {
+fun App(
+    onRequestVpn: (onGranted: () -> Unit) -> Unit,
+    onStopVpn: () -> Unit,
+) {
     val context = LocalContext.current
-    var running by remember { mutableStateOf(false) }
-    var robloxFix by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var robloxFix by remember { mutableStateOf(VpnState.robloxApplied) }
     var strategies by remember { mutableStateOf<List<CoreBridge.Strategy>>(emptyList()) }
     var selectedStrategyId by remember { mutableStateOf("general") }
     var nativeOk by remember { mutableStateOf<Boolean?>(null) }
     var logText by remember { mutableStateOf("[загрузка…]") }
 
     LaunchedEffect(Unit) {
-        // extract assets + probe native lib off the UI thread
-        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val result = withContext(Dispatchers.IO) {
             runCatching {
                 val dir = AssetBootstrap.strategiesDir(context)
                 val list = CoreBridge.loadStrategies(dir.absolutePath)
-                list to CoreBridge.isNativeAvailable()
+                val savedHosts = java.io.File(context.filesDir, "roblox-hosts.json")
+                val hasSaved = savedHosts.exists() && savedHosts.readText().isNotBlank()
+                list to (CoreBridge.isNativeAvailable() to hasSaved)
             }
         }
         result.fold(
-            onSuccess = { (list, ok) ->
+            onSuccess = { (list, flags) ->
+                val (ok, hasSaved) = flags
                 strategies = list
                 nativeOk = ok
+                robloxFix = hasSaved || VpnState.robloxApplied
                 if (list.isNotEmpty() && list.none { it.id == selectedStrategyId }) {
                     selectedStrategyId = list.first().id
                 }
                 logText = buildString {
                     append(if (ok) "[core] native OK\n" else "[core] native missing\n")
-                    append("[core] стратегий: ${list.size}")
+                    append("[core] стратегий: ${list.size}\n")
+                    append("[m2] DPI-обход: TODO (userspace TCP), работает DNS-фикс")
                 }
             },
             onFailure = { e ->
@@ -75,6 +88,11 @@ fun App() {
         )
     }
 
+    LaunchedEffect(VpnState.running, VpnState.robloxApplied, VpnState.lastError) {
+        robloxFix = VpnState.robloxApplied
+        VpnState.lastError?.let { logText = "[vpn] $it" }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -82,14 +100,15 @@ fun App() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Header
+        // Header status
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             val dotColor = when {
+                VpnState.lastError != null -> Color(0xFFF44336)
+                VpnState.running -> Color(0xFF4CAF50)
                 nativeOk == false -> Color(0xFFF44336)
-                running -> Color(0xFF4CAF50)
                 else -> Color(0xFFFFC107)
             }
             Box(
@@ -100,8 +119,8 @@ fun App() {
             )
             Text(
                 text = when {
-                    nativeOk == false -> "Ошибка ядра"
-                    running -> "Работает"
+                    VpnState.lastError != null -> "Ошибка"
+                    VpnState.running -> "VPN работает"
                     else -> "Остановлен"
                 },
                 color = Color(0xFFE0E0E0),
@@ -111,9 +130,9 @@ fun App() {
 
         HorizontalDivider(color = Color(0xFF222222))
 
-        // Strategy picker (simple cycle-through for skeleton)
+        // Strategy picker (active list comes from Rust core)
         Text(
-            text = "Стратегия (${strategies.size})",
+            text = "Стратегия (${strategies.size}) — Windows-режим",
             color = Color(0xFF888888),
             fontSize = 13.sp,
         )
@@ -139,24 +158,35 @@ fun App() {
 
         HorizontalDivider(color = Color(0xFF222222))
 
-        // Main toggle (visual only for now — VPN engine lands in M2)
+        // Main toggle: start/stop the VPN (DNS engine for now)
         Button(
-            onClick = { running = !running },
+            onClick = {
+                if (VpnState.running) {
+                    onStopVpn()
+                    logText = "[vpn] остановлен"
+                } else {
+                    onRequestVpn {
+                        ZapretVpnService.start(context)
+                        logText = "[vpn] запущен (dns-only:10.0.0.3/32)\n" +
+                            if (robloxFix) "[vpn] roblox-hosts: активны" else "[vpn] roblox-hosts: выключены"
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (running) Color(0xFF2A2A2A) else Color(0xFFE0E0E0),
-                contentColor = if (running) Color(0xFFF44336) else Color.Black,
+                containerColor = if (VpnState.running) Color(0xFF2A2A2A) else Color(0xFFE0E0E0),
+                contentColor = if (VpnState.running) Color(0xFFF44336) else Color.Black,
             ),
         ) {
             Text(
-                text = if (running) "Остановить" else "Запустить",
+                text = if (VpnState.running) "Остановить" else "Запустить",
                 fontSize = 16.sp,
             )
         }
 
-        // Roblox toggle
+        // Roblox toggle: fetch JSON -> persist -> live reload
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -169,7 +199,49 @@ fun App() {
             )
             Switch(
                 checked = robloxFix,
-                onCheckedChange = { robloxFix = it },
+                onCheckedChange = { enabled ->
+                    robloxFix = enabled
+                    scope.launch {
+                        if (enabled) {
+                            logText = "[roblox] тяну JSON…"
+                            val r = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val url = CoreBridge.robloxJsonUrl()
+                                    val block = CoreBridge.fetchRobloxHosts(url)
+                                    block
+                                }
+                            }
+                            r.fold(
+                                onSuccess = { block ->
+                                    withContext(Dispatchers.IO) {
+                                        ZapretVpnService.persistHosts(context, block)
+                                    }
+                                    logText = "[roblox] применён (${block.lineCount} строк)\n" +
+                                        "[vpn] DNS-подмена активна"
+                                },
+                                onFailure = { e ->
+                                    VpnState.robloxApplied = false
+                                    logText = "[roblox] ошибка: ${e.message}\n" +
+                                        "[hint] задай URL JSON (settings) — сейчас заглушка CHANGE_ME"
+                                    Toast.makeText(
+                                        context,
+                                        "Roblox JSON: ${e.message}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                },
+                            )
+                        } else {
+                            withContext(Dispatchers.IO) {
+                                java.io.File(context.filesDir, "roblox-hosts.json").writeText("")
+                                VpnState.robloxApplied = false
+                                if (VpnState.running) {
+                                    ZapretVpnService.reloadHosts(context)
+                                }
+                            }
+                            logText = "[roblox] выключен"
+                        }
+                    }
+                },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color(0xFFE0E0E0),
                     checkedTrackColor = Color(0xFF444444),
@@ -181,7 +253,6 @@ fun App() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Log area
         Text(
             text = "Лог:\n$logText",
             color = Color(0xFF666666),
