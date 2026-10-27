@@ -79,8 +79,8 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             tail -n 60 /tmp/cargo-ndk.log >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::cargo-ndk exit $RC — see step summary"
-            tail -n 20 /tmp/cargo-ndk.log
+            LOG_TAIL=$(tail -n 15 /tmp/cargo-ndk.log | tr '\n' ' | ' | tr -d '\r')
+            echo "::error::cargo-ndk exit $RC :: $LOG_TAIL"
             exit "$RC"
           fi
           echo "Built libs:"
