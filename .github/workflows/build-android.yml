@@ -117,8 +117,24 @@ jobs:
           find "$GITHUB_WORKSPACE/android/app/src/main/java/uniffi" -type f
 
       - name: Build APK
-        run: gradle assembleDebug --stacktrace
         working-directory: android
+        run: |
+          set +e
+          gradle assembleDebug --stacktrace 2>&1 | tee /tmp/gradle.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            # Kotlin errors first, then gradle's "what went wrong" block
+            LOG_TAIL=$(grep -E "^e: |error: |FAILURE:|\* What went wrong|Caused by" /tmp/gradle.log | tail -15 | tr '\n' ' | ')
+            if [ -z "$LOG_TAIL" ]; then
+              LOG_TAIL=$(tail -n 15 /tmp/gradle.log | tr '\n' ' | ')
+            fi
+            echo "::error::gradle assembleDebug exit $RC :: $LOG_TAIL"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E "^e: |error: |\* What went wrong|Caused by" /tmp/gradle.log | tail -40 >> "$GITHUB_STEP_SUMMARY" || tail -n 60 /tmp/gradle.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit "$RC"
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

@@ -1,7 +1,6 @@
 package com.mesorg.zapret.vpn
 
 import uniffi.zapret_core_ffi.dnsRespond
-import uniffi.zapret_core_ffi.hostsBlockToJson
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket

@@ -88,8 +88,7 @@ fun App(
         )
     }
 
-    LaunchedEffect(VpnState.running, VpnState.robloxApplied, VpnState.lastError) {
-        robloxFix = VpnState.robloxApplied
+    LaunchedEffect(VpnState.lastError) {
         VpnState.lastError?.let { logText = "[vpn] $it" }
     }
 
@@ -220,6 +219,7 @@ fun App(
                                         "[vpn] DNS-подмена активна"
                                 },
                                 onFailure = { e ->
+                                    robloxFix = false
                                     VpnState.robloxApplied = false
                                     logText = "[roblox] ошибка: ${e.message}\n" +
                                         "[hint] задай URL JSON (settings) — сейчас заглушка CHANGE_ME"
