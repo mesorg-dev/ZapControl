@@ -215,7 +215,7 @@ fun App(
                                     withContext(Dispatchers.IO) {
                                         ZapretVpnService.persistHosts(context, block)
                                     }
-                                    logText = "[roblox] применён (${block.lineCount} строк)\n" +
+                                    logText = "[roblox] применён (${block.lines().size} строк)\n" +
                                         "[vpn] DNS-подмена активна"
                                 },
                                 onFailure = { e ->
