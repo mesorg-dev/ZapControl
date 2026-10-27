@@ -180,7 +180,7 @@ class ZapretVpnService : VpnService() {
             startForeground(
                 NOTIF_ID,
                 notif,
-                android.app.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
             )
         } else {
             startForeground(NOTIF_ID, notif)
