@@ -90,18 +90,21 @@ jobs:
       - name: Generate Kotlin bindings from built .so
         run: |
           set -euo pipefail
-          SO=$(find android/app/src/main/jniLibs -name "libzapret_core_ffi.so" | head -1)
+          SO="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a/libzapret_core_ffi.so"
           echo "Using .so: $SO"
-          if [ -z "$SO" ]; then
-            echo "::error::libzapret_core_ffi.so not found in jniLibs"
-            find android/app/src/main/jniLibs -type f || true
+          if [ ! -f "$SO" ]; then
+            SO=$(find "$GITHUB_WORKSPACE/android/app/src/main/jniLibs" -name "libzapret_core_ffi.so" | head -1)
+          fi
+          if [ -z "$SO" ] || [ ! -f "$SO" ]; then
+            echo "::error::libzapret_core_ffi.so not found"
             exit 1
           fi
           set +e
-          cargo run --manifest-path crates/zapret-core-ffi/Cargo.toml --bin uniffi-bindgen -- \
+          # run from crate dir: uniffi-bindgen calls cargo metadata (needs Cargo.toml)
+          (cd crates/zapret-core-ffi && cargo run --bin uniffi-bindgen -- \
             generate --language kotlin \
-            --out-dir android/app/src/main/java \
-            --library "$SO" --crate zapret_core_ffi 2>&1 | tee /tmp/bindgen.log
+            --out-dir "$GITHUB_WORKSPACE/android/app/src/main/java" \
+            --library "$SO" --crate zapret_core_ffi) 2>&1 | tee /tmp/bindgen.log
           RC=${PIPESTATUS[0]}
           set -e
           if [ "$RC" -ne 0 ]; then
@@ -111,7 +114,7 @@ jobs:
             exit "$RC"
           fi
           echo "Generated:"
-          find android/app/src/main/java/uniffi -type f
+          find "$GITHUB_WORKSPACE/android/app/src/main/java/uniffi" -type f
 
       - name: Build APK
         run: gradle assembleDebug --stacktrace
