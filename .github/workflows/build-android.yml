@@ -15,9 +15,6 @@ jobs:
   build:
     name: Build APK (ubuntu)
     runs-on: ubuntu-latest
-    env:
-      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,30 +38,35 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
-      - name: Install Android commandline-tools
+      - name: Accept Android licenses
         run: |
           set -euo pipefail
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          cd "$ANDROID_HOME"
-          curl -fsSL -o cmdline.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-          unzip -q cmdline.zip
-          mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
-          rm cmdline.zip
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+          # ubuntu-latest image ships SDK at this path
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          # ensure required packages
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
-            "ndk;27.2.12479018"
+            "ndk;27.2.12479018" || true
 
       - name: Build FFI cdylib for arm64-v8a
         run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build -p zapret-core-ffi --release
 
       - name: Build APK
         run: ./gradlew assembleDebug
         working-directory: android
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
